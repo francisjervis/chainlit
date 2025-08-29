@@ -1,0 +1,54 @@
+name: Build Assets for Fork Install
+on:
+  push:
+    branches:
+      - feature/websocket-lifecycle-callbacks
+      # Add other development branches as needed
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  contents: write # Need write permission to commit built assets
+
+jobs:
+  build-assets:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Use a token that can push to protected branches if needed
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Install Node, pnpm and dependencies
+        uses: ./.github/actions/pnpm-node-install
+        with:
+          pnpm-install-args: --no-frozen-lockfile
+          
+      - name: Install Python, uv and Python dependencies
+        uses: ./.github/actions/uv-python-install
+        with:
+          working-directory: ./backend
+          
+      - name: Build frontend and prepare assets
+        run: uv run python build.py
+        working-directory: ./backend
+        
+      - name: Check if assets changed
+        id: check_changes
+        run: |
+          git add backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
+          if git diff --staged --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Commit built assets
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
+          git commit -m "chore: update built frontend assets [skip ci]"
+          git push
