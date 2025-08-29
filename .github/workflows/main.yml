@@ -1,4 +1,4 @@
-name: Build Assets for Fork Install
+name: Build Assets for Git Install
 on:
   push:
     branches:
@@ -34,14 +34,42 @@ jobs:
         run: uv run python build.py
         working-directory: ./backend
         
+      - name: Verify build artifacts exist
+        run: |
+          echo "Checking for build artifacts..."
+          ls -la backend/chainlit/frontend/dist/ || echo "Frontend dist not found"
+          ls -la backend/chainlit/copilot/dist/ || echo "Copilot dist not found"
+          
+          # Ensure the directories exist (build.py should create them)
+          if [ ! -d "backend/chainlit/frontend/dist" ]; then
+            echo "Error: frontend/dist directory not created by build"
+            exit 1
+          fi
+          if [ ! -d "backend/chainlit/copilot/dist" ]; then
+            echo "Error: copilot/dist directory not created by build"
+            exit 1
+          fi
+        
       - name: Check if assets changed
         id: check_changes
         run: |
-          git add backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
+          # Check if directories exist and have content
+          if [ ! -d "backend/chainlit/frontend/dist" ] || [ ! -d "backend/chainlit/copilot/dist" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Assets missing, will commit"
+            exit 0
+          fi
+          
+          # Force add the ignored directories
+          git add -f backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
+          
+          # Check if there are any changes staged
           if git diff --staged --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No changes to built assets"
           else
             echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Built assets have changes"
           fi
           
       - name: Commit built assets
@@ -49,6 +77,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
+          # Force add the ignored directories
+          git add -f backend/chainlit/frontend/dist/ backend/chainlit/copilot/dist/
           git commit -m "chore: update built frontend assets [skip ci]"
           git push
